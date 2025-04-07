@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\User\UserAuthController;
+use App\Http\Controllers\Auth\User\ProfileController;
 use App\Http\Controllers\Auth\Admin\AdminAuthController;
 
 /*
@@ -21,7 +22,6 @@ Route::prefix('auth')->group(function () {
         Route::post('/send-otp', [UserAuthController::class, 'sendOtp']);
         Route::post('/verify-otp', [UserAuthController::class, 'verifyOtp']);
         Route::post('/register', [UserAuthController::class, 'register']);
-        Route::post('/refresh-token', [UserAuthController::class, 'refresh']);
         Route::post('/login', [UserAuthController::class, 'login']);
         Route::post('/login_verify', [UserAuthController::class, 'login_verify']);
 
@@ -30,7 +30,8 @@ Route::prefix('auth')->group(function () {
             Route::post('/logout', [UserAuthController::class, 'logout']);
             Route::get('/dashboard', [UserAuthController::class, 'dashboard']);
             Route::post('/change-password', [UserAuthController::class, 'changePassword']);
-            Route::get('/profile', [UserAuthController::class, 'profile']);
+            Route::get('/show', [ProfileController::class, 'show']);
+            Route::put('/update', [ProfileController::class, 'update']);
         });
     });
 
@@ -38,7 +39,6 @@ Route::prefix('auth')->group(function () {
     Route::prefix('admin')->group(function () {
         Route::post('/send-otp', [AdminAuthController::class, 'sendOtp']);
         Route::post('/verify-otp', [AdminAuthController::class, 'verifyOtp']);
-        Route::post('/refresh-token', [AdminAuthController::class, 'refresh']);
         Route::post('/login', [AdminAuthController::class, 'login']);
         Route::post('/login_verify', [AdminAuthController::class, 'login_verify']);
 
@@ -46,6 +46,8 @@ Route::prefix('auth')->group(function () {
         Route::middleware(['auth:admin', 'admin'])->group(function () {
             Route::post('/logout', [AdminAuthController::class, 'logout']);
             Route::get('/dashboard', [AdminAuthController::class, 'dashboard']);
+            Route::get('/profile', [AdminAuthController::class, 'profile']);
+
         });
     });
 });

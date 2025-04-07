@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('phone')->unique();
             $table->string('password');
             $table->enum('role', ['1', '2', '3'])->default('2')->comment('1: Admin, 2: Support Executive, 3: Accounts');
+            $table->enum('gender', ['Male', 'Female', 'Other'])->nullable();
             $table->string('designation')->nullable();
             $table->string('department')->nullable();
             $table->string('employee_id')->unique();

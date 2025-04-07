@@ -12,7 +12,7 @@ class User extends Authenticatable implements JWTSubject
         'gst_details', 'aadhaar_number', 'pan_number', 'address_proof',
         'identity_proof', 'profile_logo', 'address_line', 'state', 'city',
         'pincode', 'consent', 'password', 'otp', 'otp_expires_at',
-        'is_verified', 'password_changed_at'
+        'is_verified', 'password_changed_at','gender'
     ];
 
     protected $hidden = [

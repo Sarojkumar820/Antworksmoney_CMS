@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Http;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Auth;
-use Carbon\Carbon;
 use App\Models\User;
 
 class UserAuthController extends Controller
@@ -35,10 +34,9 @@ class UserAuthController extends Controller
                     throw new \Exception('Failed to create new user');
                 }
             }
-
             // Generate 6-digit OTP
             $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-            $otpExpiresAt = Carbon::now('Asia/Kolkata')->addMinutes(5);
+            $otpExpiresAt = now()->addMinutes(5); // Changed to 10 minutes
 
             // Store OTP in the database
             $user->update([
@@ -83,7 +81,6 @@ class UserAuthController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while processing your request',
-                'error' => env('APP_DEBUG') ? $e->getMessage() : null
             ], 500);
         }
     }
@@ -91,35 +88,70 @@ class UserAuthController extends Controller
     // Verify OTP and Handle Registration/Login
     public function verifyOtp(Request $request)
     {
-        $request->validate([
-            'phone' => 'required|numeric|digits:10',
-            'otp' => 'required|numeric|digits:6'
-        ]);
+        try {
+            // Validate the incoming request data
+            $request->validate([
+                'phone' => 'required|numeric|digits:10',
+                'otp' => 'required|numeric|digits:6',
+            ]);
 
-        $user = User::where('phone', $request->phone)
-            ->where('otp', $request->otp)
-            ->where('otp_expires_at', '>', Carbon::now())
-            ->first();
+            // Find user by phone number
+            $user = User::where('phone', $request->phone)->first();
 
-        if (!$user) {
-            return response()->json(['error' => 'Invalid OTP or OTP expired'], 401);
-        }
+            if (!$user) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
 
-        $user->update(['is_verified' => true, 'otp' => null, 'otp_expires_at' => null]);
+            // Check if OTP has expired
+            if (now()->gt($user->otp_expires_at)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'The OTP has expired. Please request a new one.'
+                ], 401);
+            }
 
-        if ($user->email) {
-            $token = JWTAuth::fromUser($user);
+            // Check if OTP matches
+            if ($user->otp !== $request->otp) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'The entered OTP is invalid. Please try again.'
+                ], 401);
+            }
+
+            // OTP is valid and not expired, mark user as verified
+            $user->update([
+                'is_verified' => true,
+                'otp' => null,
+                'otp_expires_at' => null,
+            ]);
+
+            // If user already registered (has email), log them in with JWT token
+            if ($user->email) {
+                $token = JWTAuth::fromUser($user);
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'OTP Verified Successfully',
+                    'registration_key' => 1, // 1 => Redirect to Dashboard
+                    'token' => $token,
+                ], 200);
+            }
+
+            // If user has no email, prompt them to complete registration
             return response()->json([
-                'message' => 'OTP verified',
-                'token' => $token,
-                'redirect' => '/user/dashboard'
+                'status' => true,
+                'message' => 'OTP verified Successfully',
+                'registration_key' => 2, // 2 => Redirect to registration form
             ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'An error occurred while verifying OTP',
+            ], 500);
         }
-
-        return response()->json([
-            'message' => 'OTP verified. Complete registration.',
-            'redirect' => '/user/register'
-        ], 200);
     }
 
     public function register(Request $request)
@@ -129,19 +161,27 @@ class UserAuthController extends Controller
             'full_name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email,' . ($request->user_id ?? 'NULL'),
             'user_type' => 'required|in:1,2',
+            'gender' => 'nullable|in:Male,Female,Other',
             'dob_or_incorporation' => 'nullable|date',
-            'pan_number' => 'nullable|string|regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+            'gst_details' => 'nullable|string|max:20',
+            'aadhaar_number' => 'nullable|digits:12',
+            'pan_number' => 'nullable|string|size:10|regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+            'address_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'identity_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'profile_logo' => 'nullable|file|image|max:2048',
             'address_line' => 'nullable|string|max:255',
             'state' => 'nullable|string|max:100',
             'city' => 'nullable|string|max:100',
             'pincode' => 'nullable|string|digits:6',
+            'password' => 'nullable|string|min:6',
+            'password_changed_at' => 'nullable|date',
         ]);
 
         $user = User::where('phone', $validated['phone'])->firstOrFail();
         $password = $this->generateStrongPassword(16);
 
         try {
-            // Prepare email content
+            // Send email first
             $emailContent = "Thank you for registering!\n\n"
                 . "Your account has been successfully created.\n\n"
                 . "Your temporary password is: $password\n\n"
@@ -149,26 +189,40 @@ class UserAuthController extends Controller
                 . "Thanks,\n"
                 . "The Team";
 
-            // Send email with raw content
             Mail::raw($emailContent, function ($message) use ($validated) {
-                $message->to($validated['email'])
-                    ->subject('Your Account Password');
+                $message->to($validated['email'])->subject('Your Account Password');
             });
 
+            // Save file uploads after email sent
+            if ($request->hasFile('address_proof')) {
+                $user->address_proof = $request->file('address_proof')->store('documents/address', 'public');
+            }
+
+            if ($request->hasFile('identity_proof')) {
+                $user->identity_proof = $request->file('identity_proof')->store('documents/address', 'public');
+            }
+
+            if ($request->hasFile('profile_logo')) {
+                $user->profile_logo = $request->file('profile_logo')->store('profiles', 'public');
+            }
+
             // Update user only after successful email
-            $user->update([
-                'full_name' => $validated['full_name'],
-                'email' => $validated['email'],
-                'password' => Hash::make($password),
-                'user_type' => $validated['user_type'],
-                'dob_or_incorporation' => $validated['dob_or_incorporation'],
-                'pan_number' => $validated['pan_number'],
-                'address_line' => $validated['address_line'],
-                'state' => $validated['state'],
-                'city' => $validated['city'],
-                'pincode' => $validated['pincode'],
-                'password_changed_at' => null,
-            ]);
+            $user->full_name = $validated['full_name'];
+            $user->email = $validated['email'];
+            $user->password = Hash::make($password);
+            $user->user_type = $validated['user_type'];
+            $user->gender = $validated['gender'];
+            $user->dob_or_incorporation = $validated['dob_or_incorporation'] ;
+            $user->gst_details = $validated['gst_details'] ?? null;
+            $user->aadhaar_number = $validated['aadhaar_number'];
+            $user->pan_number = $validated['pan_number'];
+            $user->address_line = $validated['address_line'];
+            $user->state = $validated['state'];
+            $user->city = $validated['city'];
+            $user->pincode = $validated['pincode'];
+            $user->password_changed_at = null;
+
+            $user->save();
 
             $token = JWTAuth::fromUser($user);
 
@@ -176,13 +230,11 @@ class UserAuthController extends Controller
                 'success' => true,
                 'message' => 'Registration completed successfully. Check your email for password.',
                 'token' => $token,
-                'redirect' => '/user/dashboard'
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Registration failed. Could not send email.',
-                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -239,17 +291,12 @@ class UserAuthController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'OTP sent successfully to your email.',
-                'data' => [
-                    'email' => $user->email,
-                    'otp_expires_at' => $otpExpiresAt->toDateTimeString()
-                ]
+                'message' => 'OTP sent successfully, Please check your Email'
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to send OTP. Please try again.',
-                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -257,44 +304,60 @@ class UserAuthController extends Controller
 
     public function login_verify(Request $request)
     {
-        $request->validate([
-            'email' => 'required|email',
-            'otp' => 'required|string|size:6',
-        ]);
+        try {
+            $request->validate([
+                'email' => 'required|email',
+                'otp' => 'required|string|digits:6',
+            ]);
 
-        $user = User::where('email', $request->email)
-            ->where('otp', $request->otp)
-            ->where('otp_expires_at', '>', Carbon::now())
-            ->first();
+            $user = User::where('email', $request->email)->first();
 
-        if (!$user) {
+            if (!$user) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'User not found'
+                ], 404);
+            }
+
+            // Check if OTP has expired first
+            if (now()->gt($user->otp_expires_at)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'OTP has expired. Please request a new one.'
+                ], 401);
+            }
+
+            // Then verify OTP match
+            if ($user->otp !== $request->otp) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid OTP. Please try again.'
+                ], 401);
+            }
+
+            // Mark as verified and clear OTP
+            $user->update([
+                'is_verified' => true,
+                'otp' => null,
+                'otp_expires_at' => null
+            ]);
+
+            // Generate JWT token
+            $token = JWTAuth::fromUser($user);
+
+
             return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid or expired OTP'
-            ], 401);
-        }
-
-        // Mark as verified and clear OTP
-        $user->update([
-            'is_verified' => true,
-            'otp' => null,
-            'otp_expires_at' => null,
-        ]);
-
-        // Generate JWT token
-        $token = JWTAuth::fromUser($user);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'OTP verified successfully',
-            'data' => [
+                'status' => 'success',
+                'message' => 'Login successful, welcome to your Dashboard.',
                 'access_token' => $token,
-                'redirect_to' => '/user/dashboard'
-            ]
-        ]);
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to verify OTP',
+            ], 500);
+        }
     }
-
-
     // Get Logged-in User Details
     public function dashboard()
     {
@@ -325,16 +388,14 @@ class UserAuthController extends Controller
                 'max:24',
                 'different:current_password',
                 'same:new_password_confirmation',
-                function ($attribute, $value, $fail) {
+                function ($value, $fail) {
                     $complexity = 0;
-
                     if (preg_match('/[A-Z]/', $value)) $complexity++;
                     if (preg_match('/[a-z]/', $value)) $complexity++;
                     if (preg_match('/[0-9]/', $value)) $complexity++;
                     if (preg_match('/[^A-Za-z0-9]/', $value)) $complexity++;
-
                     if ($complexity < 3) {
-                        $fail('The password must be 6-24 characters and contain at least three of: uppercase, lowercase, numbers, or special characters.');
+                        $fail('Password must be 6–24 chars and include 3 of: uppercase, lowercase, number, special char.');
                     }
                 }
             ],
@@ -357,17 +418,24 @@ class UserAuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Password changed successfully.',
-            'data' => [
-                'password_changed_at' => $user->password_changed_at->format('Y-m-d H:i:s'),
-                'next_steps' => 'You may need to log in again with your new password.'
-            ]
-        ]);
+        ], 200);
     }
 
     // User Logout
     public function logout()
     {
-        Auth::guard('user')->logout();
-        return response()->json(['message' => 'Successfully logged out'], 200);
+        try {
+            Auth::guard('user')->logout();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Successfully logged out'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to logout'
+            ], 500);
+        }
     }
 }

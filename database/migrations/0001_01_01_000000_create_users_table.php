@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('email')->unique()->nullable()->collation('utf8mb4_unicode_ci');
             $table->string('phone')->unique();
             $table->enum('user_type', ['1', '2', '3'])->nullable()->comment('1: Buddy, 2: Bizbuddy, 3: Bizbuddy Executive');
+            $table->enum('gender', ['Male', 'Female', 'Other'])->nullable();
             $table->date('dob_or_incorporation')->nullable();
             $table->string('gst_details')->nullable();
             $table->string('aadhaar_number', 12)->nullable();
@@ -29,7 +30,6 @@ return new class extends Migration
             $table->string('state')->nullable();
             $table->string('city')->nullable();
             $table->string('pincode', 6)->nullable();
-            $table->boolean('consent')->default(false);
             $table->string('password')->nullable();
             $table->string('otp')->nullable();
             $table->timestamp('otp_expires_at')->nullable();

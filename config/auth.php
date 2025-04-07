@@ -40,6 +40,8 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // User API Guard
         'user' => [
             'driver' => 'jwt',
             'provider' => 'users',

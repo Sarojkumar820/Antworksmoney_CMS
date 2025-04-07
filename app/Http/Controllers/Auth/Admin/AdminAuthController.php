@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use App\Models\Admin;
 use App\Models\User;
-use Carbon\Carbon;
 
 class AdminAuthController extends Controller
 {
@@ -35,7 +34,7 @@ class AdminAuthController extends Controller
 
         // Generate OTP
         $otp = str_pad(random_int(100000, 999999), 6, '0', STR_PAD_LEFT);
-        $otpExpiresAt = Carbon::now('Asia/Kolkata')->addMinutes(5);
+        $otpExpiresAt = now()->addMinutes(5); // Changed to 10 minutes
 
         // Store OTP in the database
         try {
@@ -73,9 +72,8 @@ class AdminAuthController extends Controller
         return response()->json([
             'status' => true,
             'message' => 'OTP sent successfully',
-            'data' => [
-                'phone' => substr($phone, 0, 3) . 'XXXXX' . substr($phone, -2) // Masked phone
-            ]
+            'phone' => substr($phone, 0, 3) . 'XXXXX' . substr($phone, -2) // Masked phone
+
         ], 200);
     }
 
@@ -86,22 +84,33 @@ class AdminAuthController extends Controller
             'otp' => 'required|numeric|digits:6'
         ]);
 
-        $admin = Admin::where('phone', $request->phone)
-            ->where('otp', $request->otp)
-            ->where('otp_expires_at', '>', Carbon::now())
-            ->first();
+        $admin = Admin::where('phone', $request->phone)->first();
 
         if (!$admin) {
             return response()->json(['error' => 'Invalid OTP or OTP expired'], 401);
+        }
+        if (now()->gt($admin->otp_expires_at)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'The OTP has expired. Please request a new one.'
+            ], 401);
+        }
+
+        // Then check OTP match
+        if ($admin->otp !== $request->otp) {
+            return response()->json([
+                'status' => false,
+                'message' => 'The entered OTP is invalid. Please try again.'
+            ], 401);
         }
 
         $admin->update(['is_verified' => true, 'otp' => null, 'otp_expires_at' => null]);
         $token = JWTAuth::fromUser($admin);
 
         return response()->json([
-            'message' => 'OTP verified',
+            'status' => true,
+            'message' => 'OTP Verified Successfully, welcome to your Dashboard.',
             'token' => $token,
-            'redirect' => '/admin/admindashboard'
         ], 200);
     }
 
@@ -145,27 +154,20 @@ class AdminAuthController extends Controller
 
             // Send OTP via email
             Mail::raw($emailContent, function ($message) use ($admin) {
-                $message->to($admin->email)
-                    ->subject('Your User Login OTP');
+                $message->to($admin->email)->subject('Your User Login OTP');
             });
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'OTP sent successfully to your email.',
-                'data' => [
-                    'email' => $admin->email,
-                    'otp_expires_at' => $otpExpiresAt->toDateTimeString()
-                ]
+                'message' => 'OTP sent successfully, Please check your Email',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to send OTP. Please try again.',
-                'error' => $e->getMessage()
             ], 500);
         }
     }
-
 
     public function login_verify(Request $request)
     {
@@ -174,15 +176,27 @@ class AdminAuthController extends Controller
             'otp' => 'required|string|size:6',
         ]);
 
-        $admin = Admin::where('email', $request->email)
-            ->where('otp', $request->otp)
-            ->where('otp_expires_at', '>', Carbon::now())
-            ->first();
+        $admin = Admin::where('email', $request->email)->first();
 
         if (!$admin) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid or expired OTP'
+            ], 401);
+        }
+
+        if (now()->gt($admin->otp_expires_at)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'OTP has expired, Please request a new One'
+            ], 401);
+        }
+
+        // Then verify OTP match
+        if ($admin->otp !== $request->otp) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invalid OTP, Please try again'
             ], 401);
         }
 
@@ -198,11 +212,9 @@ class AdminAuthController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'OTP verified successfully',
-            'data' => [
-                'access_token' => $token,
-                'redirect_to' => '/admin/dashboard'
-            ]
+            'message' => 'OTP Verified Successfully, welcome to your Dashboard',
+            'access_token' => $token,
+
         ]);
     }
 
@@ -212,53 +224,60 @@ class AdminAuthController extends Controller
 
         if (!$admin) {
             return response()->json([
-                'status' => false,
+                'status'  => false,
                 'message' => 'Unauthorized access.',
             ], 403);
         }
 
         $response = [
-            'status' => true,
+            'status'  => true,
             'message' => 'Dashboard data retrieved successfully.',
-            'admin' => $admin,
+            'data'    => []
         ];
 
         switch ($admin->role) {
             case 1: // Super Admin - sees all admin roles
                 $response['data'] = [
-                    'admins' => Admin::whereIn('role', [1, 2, 3])->get()
+                    'admins' => Admin::whereIn('role', [1, 2, 3])->get(),
                 ];
                 break;
 
             case 2: // Support Executive - sees own admin role + all users
                 $response['data'] = [
                     'admins' => Admin::where('role', 2)->get(),
-                    'users' => User::all()
+                    'users'  => User::all(),
                 ];
                 break;
 
             case 3: // Accounts - sees only own role
                 $response['data'] = [
-                    'admins' => Admin::where('role', 3)->get()
+                    'admins' => Admin::where('role', 3)->get(),
                 ];
                 break;
 
             default:
                 return response()->json([
-                    'status' => false,
+                    'status'  => false,
                     'message' => 'Invalid role assigned.',
                 ], 403);
         }
 
         return response()->json($response, 200);
     }
-
     public function logout()
     {
-        Auth::guard('admin')->logout();
-        return response()->json([
-            'status' => true,
-            'message' => 'Successfully logged out.',
-        ], 200);
+        try {
+            Auth::guard('admin')->logout();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Successfully logged out'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to logout'
+            ], 500);
+        }
     }
 }

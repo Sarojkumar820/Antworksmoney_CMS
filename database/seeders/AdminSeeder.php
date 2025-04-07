@@ -18,6 +18,7 @@ class AdminSeeder extends Seeder
             'phone'          => '1234567890',
             'password'  => Hash::make('Admin@123'),
             'role'           => '1', // 1: Admin
+            'gender'           => 'Male', // 1: Admin
             'designation'    => 'System Administrator',
             'department'     => 'IT',
             'employee_id'    => strtoupper(Str::random(5)),
