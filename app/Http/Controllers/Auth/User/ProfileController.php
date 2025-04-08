@@ -31,7 +31,6 @@ class ProfileController extends Controller
             'data' => $user
         ], 200);
     }
-
     public function update(Request $request, $id)
     {
         try {
@@ -122,7 +121,6 @@ class ProfileController extends Controller
             ], 500);
         }
     }
-
     public function changePassword(Request $request)
     {
         /** @var \App\Models\User $user */

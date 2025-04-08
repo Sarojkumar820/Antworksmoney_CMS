@@ -14,6 +14,7 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('admin_id')->nullable();
             $table->string('full_name')->nullable();
             $table->string('email')->unique()->nullable()->collation('utf8mb4_unicode_ci');
             $table->string('phone')->unique();
@@ -38,6 +39,7 @@ return new class extends Migration
             $table->rememberToken();
             $table->timestamps();
 
+            $table->foreign('admin_id')->references('id')->on('admins')->onDelete('set null');
             // Index for performance optimization
             $table->index('phone');
         });

@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\User\UserAuthController;
 use App\Http\Controllers\Auth\User\ProfileController;
 use App\Http\Controllers\Auth\Admin\AdminAuthController;
-
+use App\Http\Controllers\Auth\Admin\AdminProfileController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -46,7 +46,8 @@ Route::prefix('auth')->group(function () {
         Route::middleware(['auth:admin', 'admin'])->group(function () {
             Route::post('/logout', [AdminAuthController::class, 'logout']);
             Route::get('/dashboard', [AdminAuthController::class, 'dashboard']);
-            Route::get('/profile', [AdminAuthController::class, 'profile']);
+            Route::get('/adminstore', [AdminProfileController::class, 'adminstore']);
+            Route::get('/store', [AdminProfileController::class, 'store']);
 
         });
     });
