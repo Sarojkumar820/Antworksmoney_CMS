@@ -187,7 +187,7 @@ class UserAuthController extends Controller
                 'pincode' => 'nullable|string|digits:6',
             ]);
 
-            $password = bin2hex(random_bytes(16)); // 16-character strong password
+            $password = $this->generateStrongPassword(16);// 16-character strong password
             $user->password = Hash::make($password);
 
             // Step 4: Fill user fields
