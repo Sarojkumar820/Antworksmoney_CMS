@@ -46,8 +46,8 @@ Route::prefix('auth')->group(function () {
         Route::middleware(['auth:admin', 'admin'])->group(function () {
             Route::post('/logout', [AdminAuthController::class, 'logout']);
             Route::get('/dashboard', [AdminAuthController::class, 'dashboard']);
-            Route::get('/adminstore', [AdminProfileController::class, 'adminstore']);
-            Route::get('/store', [AdminProfileController::class, 'store']);
+            Route::post('/adminstore', [AdminProfileController::class, 'adminstore']);
+            Route::post('/store', [AdminProfileController::class, 'store']);
 
         });
     });
