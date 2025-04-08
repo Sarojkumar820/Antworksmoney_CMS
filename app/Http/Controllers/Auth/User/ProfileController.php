@@ -8,10 +8,19 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 
 
 class ProfileController extends Controller
 {
+    public function dashboard()
+    {
+        return response()->json([
+            'status' => true,
+            'message' => 'User dashboard data retrieved successfully.',
+            'user' => Auth::user(),
+        ], 201);
+    }
     public function show()
     {
         /** @var User $user */
@@ -22,7 +31,6 @@ class ProfileController extends Controller
             'data' => $user
         ], 200);
     }
-
 
     public function update(Request $request, $id)
     {
@@ -68,34 +76,37 @@ class ProfileController extends Controller
                     Storage::disk('public')->delete($user->address_proof);
                 }
 
-                $file = $request->file('address_proof');
-                $filename = $user->id . '_address_' . uniqid() . '_' . $file->getClientOriginalName();
-                $file->storeAs('address_proof', $filename, 'public');
-                $user->address_proof = 'address_proof/' . $filename;
+                $addressFile = $request->file('address_proof');
+                $folder = 'address_proof/' . $user->id;
+                $filename = time() . '_' . $addressFile->getClientOriginalName();
+                $addressFile->storeAs($folder, $filename, 'public');
+                $user->address_proof = $folder . '/' . $filename;
             }
 
-            // ✅ Handle identity_proof upload
+            // Handle identity proof upload
             if ($request->hasFile('identity_proof')) {
                 if ($user->identity_proof && Storage::disk('public')->exists($user->identity_proof)) {
                     Storage::disk('public')->delete($user->identity_proof);
                 }
 
-                $file = $request->file('identity_proof');
-                $filename = $user->id . '_identity_' . uniqid() . '_' . $file->getClientOriginalName();
-                $file->storeAs('identity_proof', $filename, 'public');
-                $user->identity_proof = 'identity_proof/' . $filename;
+                $identityFile = $request->file('identity_proof');
+                $folder = 'identity_proof/' . $user->id;
+                $filename = time() . '_' . $identityFile->getClientOriginalName();
+                $identityFile->storeAs($folder, $filename, 'public');
+                $user->identity_proof = $folder . '/' . $filename;
             }
 
-            // ✅ Handle profile_logo upload
+            // Handle profile logo upload
             if ($request->hasFile('profile_logo')) {
                 if ($user->profile_logo && Storage::disk('public')->exists($user->profile_logo)) {
                     Storage::disk('public')->delete($user->profile_logo);
                 }
 
-                $file = $request->file('profile_logo');
-                $filename = $user->id . '_logo_' . uniqid() . '_' . $file->getClientOriginalName();
-                $file->storeAs('profile_logo', $filename, 'public');
-                $user->profile_logo = 'profile_logo/' . $filename;
+                $logoFile = $request->file('profile_logo');
+                $folder = 'profile_logo/' . $user->id;
+                $filename = time() . '_' . $logoFile->getClientOriginalName();
+                $logoFile->storeAs($folder, $filename, 'public');
+                $user->profile_logo = $folder . '/' . $filename;
             }
 
             $user->save();
@@ -103,14 +114,61 @@ class ProfileController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => 'User profile updated successfully.',
-                'data' => $user,
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'message' => 'An error occurred while updating the profile.',
-                'error' => $e->getMessage(),
             ], 500);
         }
     }
+
+    public function changePassword(Request $request)
+    {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access. Please log in again.',
+            ], 401);
+        }
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password' => ['required','string','min:6','max:24','different:current_password','same:new_password_confirmation',
+                function ($value, $fail) {
+                    $complexity = 0;
+                    if (preg_match('/[A-Z]/', $value)) $complexity++;
+                    if (preg_match('/[a-z]/', $value)) $complexity++;
+                    if (preg_match('/[0-9]/', $value)) $complexity++;
+                    if (preg_match('/[^A-Za-z0-9]/', $value)) $complexity++;
+                    if ($complexity < 3) {
+                        $fail('Use 6-24 characters with 3 character types (A-Z, a-z, 0-9, or symbols).');
+                    }
+                }
+            ],
+            'new_password_confirmation' => ['required', 'string','same:new_password'],
+        ]);
+
+        if (!Hash::check($validated['current_password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The current password is incorrect.',
+            ], 422);
+        }
+
+        // Update password
+        $user->update([
+            'password' => Hash::make($validated['new_password']),
+            'password_changed_at' => now()->setTimezone('Asia/Kolkata'),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password changed successfully.',
+        ], 200);
+    }
+
 }
