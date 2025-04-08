@@ -6,10 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Http;
-use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Storage;
 use App\Models\User;
+
 
 class ProfileController extends Controller
 {
@@ -24,82 +23,94 @@ class ProfileController extends Controller
         ], 200);
     }
 
-    public function update(Request $request)
+
+    public function update(Request $request, $id)
     {
-        /** @var User $user */
-        $user = Auth::user();
+        try {
+            /** @var User $authUser */
+            $authUser = Auth::user();
 
-        if (!$user) {
+            if (!$authUser) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unauthorized.',
+                ], 401);
+            }
+
+            if ($authUser->id != $id) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Forbidden. You can only update your own profile.',
+                ], 403);
+            }
+
+            $user = User::find($id);
+
+            if (!$user) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'User not found.',
+                ], 404);
+            }
+
+            // ✅ Update basic fields if present
+            $user->full_name = $request->input('full_name', $user->full_name);
+            $user->dob_or_incorporation = $request->input('dob_or_incorporation', $user->dob_or_incorporation);
+            $user->gst_details = $request->input('gst_details', $user->gst_details);
+            $user->address_line = $request->input('address_line', $user->address_line);
+            $user->state = $request->input('state', $user->state);
+            $user->city = $request->input('city', $user->city);
+            $user->pincode = $request->input('pincode', $user->pincode);
+
+            // ✅ Handle address_proof upload
+            if ($request->hasFile('address_proof')) {
+                if ($user->address_proof && Storage::disk('public')->exists($user->address_proof)) {
+                    Storage::disk('public')->delete($user->address_proof);
+                }
+
+                $file = $request->file('address_proof');
+                $filename = $user->id . '_address_' . uniqid() . '_' . $file->getClientOriginalName();
+                $file->storeAs('address_proof', $filename, 'public');
+                $user->address_proof = 'address_proof/' . $filename;
+            }
+
+            // ✅ Handle identity_proof upload
+            if ($request->hasFile('identity_proof')) {
+                if ($user->identity_proof && Storage::disk('public')->exists($user->identity_proof)) {
+                    Storage::disk('public')->delete($user->identity_proof);
+                }
+
+                $file = $request->file('identity_proof');
+                $filename = $user->id . '_identity_' . uniqid() . '_' . $file->getClientOriginalName();
+                $file->storeAs('identity_proof', $filename, 'public');
+                $user->identity_proof = 'identity_proof/' . $filename;
+            }
+
+            // ✅ Handle profile_logo upload
+            if ($request->hasFile('profile_logo')) {
+                if ($user->profile_logo && Storage::disk('public')->exists($user->profile_logo)) {
+                    Storage::disk('public')->delete($user->profile_logo);
+                }
+
+                $file = $request->file('profile_logo');
+                $filename = $user->id . '_logo_' . uniqid() . '_' . $file->getClientOriginalName();
+                $file->storeAs('profile_logo', $filename, 'public');
+                $user->profile_logo = 'profile_logo/' . $filename;
+            }
+
+            $user->save();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'User profile updated successfully.',
+                'data' => $user,
+            ]);
+        } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'Unauthorized.',
-            ], 401);
+                'message' => 'An error occurred while updating the profile.',
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        // Fields that should never be updated through this endpoint
-        $protectedFields = ['phone', 'email', 'user_type', 'gender'];
-
-        // Remove protected fields from the request data before validation
-        $requestData = $request->except(array_merge($protectedFields, [
-            'address_proof',
-            'identity_proof',
-            'profile_logo'
-        ]));
-
-        $validator = Validator::make($request->all(), [
-            'name' => 'sometimes|string|max:255',
-            'dob_or_incorporation' => 'sometimes|date',
-            'gst_details' => 'sometimes|string|nullable',
-            'address_proof' => 'sometimes|file|mimes:jpg,jpeg,png,pdf|max:2048',
-            'identity_proof' => 'sometimes|file|mimes:jpg,jpeg,png,pdf|max:2048',
-            'profile_logo' => 'sometimes|file|image|mimes:jpg,jpeg,png|max:1024|nullable',
-            'address_line' => 'sometimes|string',
-            'state' => 'sometimes|string',
-            'city' => 'sometimes|string',
-            'pincode' => 'sometimes|string|size:6',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Validation failed.',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $validatedData = $validator->validated();
-
-        // Handle file uploads
-        if ($request->hasFile('address_proof')) {
-            // Delete old file if exists
-            if ($user->address_proof) {
-                Storage::disk('public')->delete($user->address_proof);
-            }
-            $validatedData['address_proof'] = $request->file('address_proof')->store('documents/address', 'public');
-        }
-
-        if ($request->hasFile('identity_proof')) {
-            // Delete old file if exists
-            if ($user->identity_proof) {
-                Storage::disk('public')->delete($user->identity_proof);
-            }
-            $validatedData['identity_proof'] = $request->file('identity_proof')->store('documents/identity', 'public');
-        }
-
-        if ($request->hasFile('profile_logo')) {
-            // Delete old file if exists
-            if ($user->profile_logo) {
-                Storage::disk('public')->delete($user->profile_logo);
-            }
-            $validatedData['profile_logo'] = $request->file('profile_logo')->store('profiles', 'public');
-        }
-
-        $user->update($validatedData);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Profile updated successfully.',
-            'data' => $user->fresh()
-        ], 200);
     }
 }

@@ -31,7 +31,7 @@ Route::prefix('auth')->group(function () {
             Route::get('/dashboard', [UserAuthController::class, 'dashboard']);
             Route::post('/change-password', [UserAuthController::class, 'changePassword']);
             Route::get('/show', [ProfileController::class, 'show']);
-            Route::put('/update', [ProfileController::class, 'update']);
+            Route::post('/update/{id}', [ProfileController::class, 'update']);
         });
     });
 

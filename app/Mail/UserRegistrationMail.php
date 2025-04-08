@@ -27,9 +27,9 @@ class UserRegistrationMail extends Mailable
      */
     public function envelope()
     {
-        return new Envelope(
-            subject: 'Your Account Password',
-        );
+        // return new Envelope(
+        //     subject: 'Your Account Password',
+        // );
     }
 
     /**

@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Http;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class UserAuthController extends Controller
 {
@@ -156,63 +158,45 @@ class UserAuthController extends Controller
 
     public function register(Request $request)
     {
-        $validated = $request->validate([
-            'phone' => 'required|numeric|digits:10|exists:users,phone',
-            'full_name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,' . ($request->user_id ?? 'NULL'),
-            'user_type' => 'required|in:1,2',
-            'gender' => 'nullable|in:Male,Female,Other',
-            'dob_or_incorporation' => 'nullable|date',
-            'gst_details' => 'nullable|string|max:20',
-            'aadhaar_number' => 'nullable|digits:12',
-            'pan_number' => 'nullable|string|size:10|regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
-            'address_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
-            'identity_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
-            'profile_logo' => 'nullable|file|image|max:2048',
-            'address_line' => 'nullable|string|max:255',
-            'state' => 'nullable|string|max:100',
-            'city' => 'nullable|string|max:100',
-            'pincode' => 'nullable|string|digits:6',
-            'password' => 'nullable|string|min:6',
-            'password_changed_at' => 'nullable|date',
-        ]);
-
-        $user = User::where('phone', $validated['phone'])->firstOrFail();
-        $password = $this->generateStrongPassword(16);
-
         try {
-            // Send email first
-            $emailContent = "Thank you for registering!\n\n"
-                . "Your account has been successfully created.\n\n"
-                . "Your temporary password is: $password\n\n"
-                . "Please login and change your password immediately for security reasons.\n\n"
-                . "Thanks,\n"
-                . "The Team";
-
-            Mail::raw($emailContent, function ($message) use ($validated) {
-                $message->to($validated['email'])->subject('Your Account Password');
-            });
-
-            // Save file uploads after email sent
-            if ($request->hasFile('address_proof')) {
-                $user->address_proof = $request->file('address_proof')->store('documents/address', 'public');
+            // Step 1: Retrieve user by phone
+            $user = User::where('phone', $request->phone)->first();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User with this phone number not found.',
+                ], 404);
             }
 
-            if ($request->hasFile('identity_proof')) {
-                $user->identity_proof = $request->file('identity_proof')->store('documents/address', 'public');
-            }
+            // Step 2: Validate input
+            $validated = $request->validate([
+                'phone' => 'required|numeric|digits:10|exists:users,phone',
+                'full_name' => 'required|string|max:255',
+                'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+                'user_type' => 'required|in:1,2',
+                'gender' => 'nullable|in:Male,Female,Other',
+                'dob_or_incorporation' => 'nullable|date',
+                'gst_details' => 'nullable|string|max:20',
+                'aadhaar_number' => 'nullable|digits:12',
+                'pan_number' => 'nullable|string|size:10|regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+                'address_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+                'identity_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+                'profile_logo' => 'nullable|file|image|max:2048',
+                'address_line' => 'nullable|string|max:255',
+                'state' => 'nullable|string|max:100',
+                'city' => 'nullable|string|max:100',
+                'pincode' => 'nullable|string|digits:6',
+            ]);
 
-            if ($request->hasFile('profile_logo')) {
-                $user->profile_logo = $request->file('profile_logo')->store('profiles', 'public');
-            }
-
-            // Update user only after successful email
-            $user->full_name = $validated['full_name'];
-            $user->email = $validated['email'];
+            $password = bin2hex(random_bytes(16)); // 16-character strong password
             $user->password = Hash::make($password);
+
+            // Step 4: Fill user fields
+            $user->full_name = $validated['full_name'];
+            $user->email = strtolower(trim($validated['email']));
             $user->user_type = $validated['user_type'];
             $user->gender = $validated['gender'];
-            $user->dob_or_incorporation = $validated['dob_or_incorporation'] ;
+            $user->dob_or_incorporation = $validated['dob_or_incorporation'];
             $user->gst_details = $validated['gst_details'] ?? null;
             $user->aadhaar_number = $validated['aadhaar_number'];
             $user->pan_number = $validated['pan_number'];
@@ -220,21 +204,62 @@ class UserAuthController extends Controller
             $user->state = $validated['state'];
             $user->city = $validated['city'];
             $user->pincode = $validated['pincode'];
-            $user->password_changed_at = null;
 
+            // Step 5: Handle file uploads
+            if ($request->hasFile('address_proof')) {
+                $addressFile = $request->file('address_proof');
+                $addressFilename = time() . '_address_' . $addressFile->getClientOriginalName();
+                $addressFile->storeAs('address_proof', $addressFilename, 'public');
+                $user->address_proof = 'address_proof/' . $addressFilename;
+            }
+
+            if ($request->hasFile('identity_proof')) {
+                $identityFile = $request->file('identity_proof');
+                $identityFilename = time() . '_identity_' . $identityFile->getClientOriginalName();
+                $identityFile->storeAs('identity_proof', $identityFilename, 'public');
+                $user->identity_proof = 'identity_proof/' . $identityFilename;
+            }
+
+            if ($request->hasFile('profile_logo')) {
+                $logoFile = $request->file('profile_logo');
+                $logoFilename = time() . '_logo_' . $logoFile->getClientOriginalName();
+                $logoFile->storeAs('profile_logo', $logoFilename, 'public');
+                $user->profile_logo = 'profile_logo/' . $logoFilename;
+            }
+
+            // Step 6: Send email with password
+            try {
+                $emailContent = "Dear {$user->full_name},\n\n"
+                    . "Thank you for completing your registration.\n\n"
+                    . "Here is your temporary password: $password\n\n"
+                    . "Please log in and change your password immediately.\n\n"
+                    . "Regards,\nYour Team";
+
+                Mail::raw($emailContent, function ($message) use ($user) {
+                    $message->to($user->email)
+                        ->subject('Your Account Password');
+                });
+            } catch (\Exception $mailException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to send password email. Registration aborted.',
+                ], 500);
+            }
+
+            // Step 7: Save user
             $user->save();
-
+            // Step 8: Generate JWT token
             $token = JWTAuth::fromUser($user);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Registration completed successfully. Check your email for password.',
+                'message' => 'User registered successfully. Password sent via Email.',
                 'token' => $token,
             ], 201);
-        } catch (\Exception $e) {
+        }  catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Registration failed. Could not send email.',
+                'message' => 'Something went wrong. Please try again later.',
             ], 500);
         }
     }
@@ -262,7 +287,6 @@ class UserAuthController extends Controller
                 'message' => 'Invalid credentials'
             ], 401);
         }
-
         // Generate OTP and set expiration time
         $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $otpExpiresAt = now()->addMinutes(10);
@@ -345,7 +369,6 @@ class UserAuthController extends Controller
             // Generate JWT token
             $token = JWTAuth::fromUser($user);
 
-
             return response()->json([
                 'status' => 'success',
                 'message' => 'Login successful, welcome to your Dashboard.',
@@ -381,13 +404,7 @@ class UserAuthController extends Controller
 
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password' => [
-                'required',
-                'string',
-                'min:6',
-                'max:24',
-                'different:current_password',
-                'same:new_password_confirmation',
+            'new_password' => ['required','string','min:6','max:24','different:current_password','same:new_password_confirmation',
                 function ($value, $fail) {
                     $complexity = 0;
                     if (preg_match('/[A-Z]/', $value)) $complexity++;
@@ -395,7 +412,7 @@ class UserAuthController extends Controller
                     if (preg_match('/[0-9]/', $value)) $complexity++;
                     if (preg_match('/[^A-Za-z0-9]/', $value)) $complexity++;
                     if ($complexity < 3) {
-                        $fail('Password must be 6–24 chars and include 3 of: uppercase, lowercase, number, special char.');
+                        $fail('Use 6-24 characters with 3 character types (A-Z, a-z, 0-9, or symbols).');
                     }
                 }
             ],
