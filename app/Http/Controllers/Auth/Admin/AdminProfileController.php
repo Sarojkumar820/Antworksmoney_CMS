@@ -16,68 +16,69 @@ class AdminProfileController extends Controller
     public function adminstore(Request $request)
     {
         try {
+            //  Step 1: Validate input
             $request->validate([
-                'full_name' => 'required|string|max:255',
-                'email' => 'required|email|unique:admins,email',
-                'phone' => 'required|string|unique:admins,phone',
-                'role' => 'required|in:1,2,3',
-                'gender' => 'nullable|in:Male,Female,Other',
-                'designation' => 'nullable|string|max:255',
-                'department' => 'nullable|string|max:255',
-                'employee_id' => 'required|string|unique:admins,employee_id',
+                'full_name'    => 'required|string|max:255',
+                'email'        => 'required|email|unique:admins,email',
+                'phone'        => 'required|string|unique:admins,phone',
+                'role'         => 'required|in:1,2,3',
+                'gender'       => 'nullable|in:Male,Female,Other',
+                'designation'  => 'nullable|string|max:255',
+                'department'   => 'nullable|string|max:255',
+                'employee_id'  => 'required|string|unique:admins,employee_id',
             ]);
 
-            $randomPassword = Str::random(8);
+            //  Step 2: Generate random temporary password
+            $randomPassword = $this->generateStrongPassword(16);
 
-            // ✅ Send raw email if email exists
-            if ($request->filled('email')) {
-                try {
-                    $emailContent = "Dear {$request->full_name},\n\n"
-                        . "You have been registered as an Admin user.\n\n"
-                        . "Login Credentials:\n"
-                        . "Email: {$request->email}\n"
-                        . "Phone: {$request->phone}\n"
-                        . "Temporary Password: {$randomPassword}\n\n"
-                        . "Please log in and change your password immediately.\n\n"
-                        . "Regards,\nYour Team";
+            //  Step 3: Send Email before saving
+            try {
+                $emailContent = "Dear {$request->full_name},\n\n"
+                    . "You have been registered as an Admin user.\n\n"
+                    . "Login Credentials:\n"
+                    . "Email: {$request->email}\n"
+                    . "Phone: {$request->phone}\n"
+                    . "Temporary Password: {$randomPassword}\n\n"
+                    . "Please log in Phone and change your password immediately.\n\n"
+                    . "Regards,\nYour Team";
 
-                    Mail::raw($emailContent, function ($message) use ($request) {
-                        $message->to($request->email)
-                            ->subject('Your Admin Login Details');
-                    });
-                } catch (\Exception $mailException) {
-                    return response()->json([
-                        'status' => false,
-                        'message' => 'Failed to send password email. Registration aborted.',
-                    ], 500);
-                }
+                Mail::raw($emailContent, function ($message) use ($request) {
+                    $message->to($request->email)
+                        ->subject('Your Admin Login Details');
+                });
+            } catch (\Exception $mailException) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Failed to send password email. Registration aborted.',
+                    'error'   => $mailException->getMessage(),
+                ], 500);
             }
 
-            // ✅ Create Admin
+            //  Step 4: Email sent successfully, now create Admin record
             $admin = new Admin();
-            $admin->full_name = $request->full_name;
-            $admin->email = $request->email;
-            $admin->phone = $request->phone;
-            $admin->password = Hash::make($randomPassword);
-            $admin->role = $request->role;
-            $admin->gender = $request->gender;
-            $admin->designation = $request->designation;
-            $admin->department = $request->department;
-            $admin->employee_id = $request->employee_id;
-            $admin->is_verified = true;
+            $admin->full_name    = $request->full_name;
+            $admin->email        = $request->email;
+            $admin->phone        = $request->phone;
+            $admin->password     = Hash::make($randomPassword);
+            $admin->role         = $request->role;
+            $admin->gender       = $request->gender;
+            $admin->designation  = $request->designation;
+            $admin->department   = $request->department;
+            $admin->employee_id  = $request->employee_id;
             $admin->save();
 
             return response()->json([
-                'status' => true,
+                'status'  => true,
                 'message' => 'Admin created and email sent successfully.',
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => false,
+                'status'  => false,
                 'message' => 'Failed to create admin user.',
             ], 500);
         }
     }
+
 
     public function store(Request $request)
     {
@@ -100,7 +101,7 @@ class AdminProfileController extends Controller
                 'pan_number' => 'nullable|string|size:10|regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
             ]);
 
-            $randomPassword = Str::random(8);
+            $randomPassword = $this->generateStrongPassword(16);
             $createdByName = $admin->full_name;
 
             // Attempt to send email before saving user
@@ -151,4 +152,9 @@ class AdminProfileController extends Controller
         }
     }
 
+    protected function generateStrongPassword($length = 16)
+    {
+        $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
+        return substr(str_shuffle(str_repeat($characters, ceil($length / strlen($characters)))), 0, $length);
+    }
 }

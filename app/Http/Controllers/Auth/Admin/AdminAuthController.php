@@ -114,7 +114,7 @@ class AdminAuthController extends Controller
         ], 200);
     }
 
-    public function login(Request $request)
+    public function adminlogin(Request $request)
     {
         // Validate incoming request
         $validated = $request->validate([
@@ -125,7 +125,7 @@ class AdminAuthController extends Controller
         // Find admin by email
         $admin = Admin::where('email', $validated['email'])->first();
 
-        if (!$admin || !Hash::check($validated['password'], $admin->password)) {
+        if (!$admin || Hash::check($validated['password'], $admin->password)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid credentials'

@@ -38,14 +38,14 @@ Route::prefix('auth')->group(function () {
     Route::prefix('admin')->group(function () {
         Route::post('/send-otp', [AdminAuthController::class, 'sendOtp']);
         Route::post('/verify-otp', [AdminAuthController::class, 'verifyOtp']);
-        Route::post('/login', [AdminAuthController::class, 'login']);
+        Route::post('/login', [AdminAuthController::class, 'adminlogin']);
         Route::post('/login_verify', [AdminAuthController::class, 'login_verify']);
 
         // Protected Admin Routes
         Route::middleware(['auth:admin', 'admin'])->group(function () {
             Route::post('/logout', [AdminAuthController::class, 'logout']);
             Route::get('/dashboard', [AdminAuthController::class, 'dashboard']);
-            Route::post('/adminstore', [AdminProfileController::class, 'adminstore']);
+            Route::post('/admin-store', [AdminProfileController::class, 'adminstore']);
             Route::post('/store', [AdminProfileController::class, 'store']);
 
         });

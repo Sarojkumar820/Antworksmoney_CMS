@@ -15,10 +15,10 @@ class AdminSeeder extends Seeder
         Admin::create([
             'full_name'      => 'Admin',
             'email'          => 'sarojkumarantworksmoney@gmail.com',
-            'phone'          => '1234567890',
-            'password'  => Hash::make('Admin@123'),
-            'role'           => '1', // 1: Admin
-            'gender'           => 'Male', // 1: Admin
+            'phone'          => '123456789',
+            'password'       => Hash::make('Admin@123'),
+            'role'           => '1',
+            'gender'         => 'Male',
             'designation'    => 'System Administrator',
             'department'     => 'IT',
             'employee_id'    => strtoupper(Str::random(5)),
