@@ -158,8 +158,7 @@ class ProfileController extends Controller
                 'min:6',
                 'max:24',
                 'different:current_password',
-                'same:new_password_confirmation',
-                function ($value, $fail) {
+                function ($attribute, $value, $fail) {
                     $complexity = 0;
                     if (preg_match('/[A-Z]/', $value)) $complexity++;
                     if (preg_match('/[a-z]/', $value)) $complexity++;
