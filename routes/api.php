@@ -28,9 +28,8 @@ Route::prefix('auth')->group(function () {
         // Protected User Routes
         Route::middleware(['auth:user', 'user'])->group(function () {
             Route::post('/logout', [UserAuthController::class, 'logout']);
-            Route::get('/dashboard', [ProfileController::class, 'dashboard']);
             Route::post('/change-password', [ProfileController::class, 'changePassword']);
-            Route::get('/show', [ProfileController::class, 'show']);
+            Route::get('/dashboard', [ProfileController::class, 'dashboard']);
             Route::post('/update/{id}', [ProfileController::class, 'update']);
         });
     });

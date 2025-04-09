@@ -15,22 +15,39 @@ class ProfileController extends Controller
 {
     public function dashboard()
     {
-        return response()->json([
-            'status' => true,
-            'message' => 'User dashboard data retrieved successfully.',
-            'user' => Auth::user(),
-        ], 201);
-    }
-    public function show()
-    {
-        /** @var User $user */
-        $user = Auth::user();
+        try {
+            /** @var User $user */
+            $user = Auth::user();
 
-        return response()->json([
-            'status' => true,
-            'data' => $user
-        ], 200);
+            if (!$user) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'User not authenticated',
+                ], 401);
+            }
+
+            // Run the queries but don't assign to a variable we won't use
+            if ($user->user_type == 2) {
+                User::whereIn('user_type', [2, 3])->get();
+            } elseif ($user->user_type == 1) {
+                User::where('user_type', 1)->get();
+            } elseif ($user->user_type == 3) {
+                User::where('user_type', 3)->get();
+            }
+            // No else needed since we don't use the data
+
+            return response()->json([
+                'status' => true,
+                'message' => 'User dashboard data retrieved successfully.',
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to retrieve dashboard data',
+            ], 500);
+        }
     }
+
     public function update(Request $request, $id)
     {
         try {
@@ -135,7 +152,13 @@ class ProfileController extends Controller
 
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password' => ['required','string','min:6','max:24','different:current_password','same:new_password_confirmation',
+            'new_password' => [
+                'required',
+                'string',
+                'min:6',
+                'max:24',
+                'different:current_password',
+                'same:new_password_confirmation',
                 function ($value, $fail) {
                     $complexity = 0;
                     if (preg_match('/[A-Z]/', $value)) $complexity++;
@@ -147,7 +170,7 @@ class ProfileController extends Controller
                     }
                 }
             ],
-            'new_password_confirmation' => ['required', 'string','same:new_password'],
+            'new_password_confirmation' => ['required', 'string', 'same:new_password'],
         ]);
 
         if (!Hash::check($validated['current_password'], $user->password)) {
@@ -168,5 +191,4 @@ class ProfileController extends Controller
             'message' => 'Password changed successfully.',
         ], 200);
     }
-
 }
